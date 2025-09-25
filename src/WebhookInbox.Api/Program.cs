@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using System.Text.Json;
+using WebhookInbox.Domain.Entities;
 using WebhookInbox.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -53,6 +55,59 @@ app.MapHealthChecks("/ready")
 app.MapGet("/api/version", () => Results.Ok(new { version = "v0.1.0", framework = "net9.0" }))
    .WithName("ApiVersion")
    .WithOpenApi();
+
+// POST /api/inbox/{source}
+// Reads raw body + headers, persists Event, returns 202 Accepted with eventId
+app.MapPost("/api/inbox/{source}", async (
+    string source,
+    HttpRequest request,
+    AppDbContext db,
+    CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(source))
+        return Results.BadRequest(new { error = "source is required" });
+
+    // Read raw body as bytes
+    byte[] payload;
+    await using (var ms = new MemoryStream())
+    {
+        await request.Body.CopyToAsync(ms, ct);
+        payload = ms.ToArray();
+    }
+
+    // Normalize headers to string[] for jsonb
+    var headersDict = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+    foreach (var h in request.Headers)
+        headersDict[h.Key] = h.Value.ToArray();
+
+    // Serialize headers to a JsonDocument (maps to jsonb)
+    var headersJson = JsonSerializer.SerializeToDocument(headersDict, new JsonSerializerOptions
+    {
+        WriteIndented = false
+    });
+
+    var entity = new Event
+    {
+        Id = Guid.NewGuid(),
+        Source = source,
+        ReceivedAt = DateTimeOffset.UtcNow,
+        Headers = headersJson,
+        Payload = payload,
+        SignatureStatus = SignatureStatus.None,
+        Status = EventStatus.New
+    };
+
+    db.Events.Add(entity);
+    await db.SaveChangesAsync(ct);
+
+    // Return 202 with Location and body { eventId }
+    var location = $"/api/events/{entity.Id}";
+    return Results.Accepted(location, new { eventId = entity.Id });
+})
+.WithName("InboxIngestion")
+.Produces(StatusCodes.Status202Accepted)
+.Produces(StatusCodes.Status400BadRequest)
+.WithOpenApi();
 
 app.Run();
 
