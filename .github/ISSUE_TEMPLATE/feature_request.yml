@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a new capability or enhancement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What problem does this feature solve?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      placeholder: "- [ ] ..."
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Milestone
+      options:
+        - M1 – Ingestion & Storage
+        - M2 – Dispatcher & Retry
+        - M3 – Idempotency, HMAC, Rate Limits
+        - M4 – Observability & SRE
+        - M5 – Admin UI & Manual Redeliver
+        - M6 – Packaging & CI

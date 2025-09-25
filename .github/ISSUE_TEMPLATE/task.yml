@@ -1,0 +1,27 @@
+name: Task
+description: A scoped unit of work linked to a milestone
+labels: ["task"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      placeholder: What needs to be done?
+    validations:
+      required: true
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Checklist
+      placeholder: "- [ ] step 1"
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Milestone
+      options:
+        - M1 – Ingestion & Storage
+        - M2 – Dispatcher & Retry
+        - M3 – Idempotency, HMAC, Rate Limits
+        - M4 – Observability & SRE
+        - M5 – Admin UI & Manual Redeliver
+        - M6 – Packaging & CI
