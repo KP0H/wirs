@@ -11,7 +11,7 @@ on:
       - 'chore/**'
   pull_request:
     branches:
-      - main
+      - master
       - develop
   workflow_dispatch: {}
 
