@@ -1,7 +1,7 @@
 ---
 RFC: 0001
 Title: Webhook Inbox MVP
-Status: Draft
+Status: Active
 Owners: Dmitrii [KP0H™] Pelevin
 Created: 2025-09-25
 ---
@@ -89,7 +89,7 @@ External systems send webhooks, but consumers face challenges:
 - Retry storm without proper limits.
 
 ## Exit Criteria (M5)
-- M1 – Ingestion & Storage
-- M3 – Idempotency, HMAC, Rate Limits
-- M4 – Observability & SRE
-- M5 – Admin UI & Redeliver
+- [X] M1 – Ingestion & Storage
+- [ ] M3 – Idempotency, HMAC, Rate Limits
+- [ ] M4 – Observability & SRE
+- [ ] M5 – Admin UI & Redeliver
