@@ -48,3 +48,5 @@ app.MapGet("/api/version", () => Results.Ok(new { version = "v0.1.0", framework 
    .WithOpenApi();
 
 app.Run();
+
+public partial class Program { }
