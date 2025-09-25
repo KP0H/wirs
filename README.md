@@ -48,6 +48,18 @@ dotnet ef migrations add Initial --project src/WebhookInbox.Infrastructure --sta
 dotnet ef database update --project src/WebhookInbox.Infrastructure --startup-project src/WebhookInbox.Api
 ```
 
+### Background dispatcher
+Run the worker locally:
+```bash
+dotnet run --project src/WebhookInbox.Worker
+```
+
+Configuration:
+
+`Delivery:PollIntervalSeconds` — polling interval  
+`Delivery:BatchSize` — events per cycle  
+`Delivery:HttpTimeoutSeconds` — HttpClient timeout  
+
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
 

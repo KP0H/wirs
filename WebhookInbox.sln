@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebhookInbox.Domain", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebhookInbox.Infrastructure", "src\WebhookInbox.Infrastructure\WebhookInbox.Infrastructure.csproj", "{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebhookInbox.Worker", "src\WebhookInbox.Worker\WebhookInbox.Worker.csproj", "{3F08E638-3827-F95D-4658-391884846A46}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -37,6 +39,10 @@ Global
 		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3F08E638-3827-F95D-4658-391884846A46}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3F08E638-3827-F95D-4658-391884846A46}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3F08E638-3827-F95D-4658-391884846A46}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3F08E638-3827-F95D-4658-391884846A46}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -46,6 +52,7 @@ Global
 		{A5E57094-A5A8-4B01-AA38-402909D66928} = {CA655281-0D61-4F19-BD47-0435228079BC}
 		{5053A9E4-C681-83FE-AEB5-9E7AE482F43E} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{3F08E638-3827-F95D-4658-391884846A46} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {0A06CA57-A0B7-4AE0-BDA8-2822ACD3511D}
