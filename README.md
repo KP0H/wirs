@@ -13,6 +13,27 @@ A mini-service for secure webhook reception, storage, observability, and reliabl
   - Observability: structured logs, traces, metrics (Prometheus exporter).
   - DevOps: Docker Compose stack, GitHub Actions CI.
 
+## Development
+
+### Database (EF Core + PostgreSQL)
+
+Set connection string in `src/WebhookInbox.Api/appsettings.Development.json`:
+
+```
+"ConnectionStrings": { 
+    "Postgres": "Host=localhost;Port=5432;Database=webhook_inbox;Username=postgres;Password=postgres" 
+}
+```
+
+Create migration and update database:
+```bash
+dotnet tool update --global dotnet-ef
+
+dotnet ef migrations add Initial --project src/WebhookInbox.Infrastructure --startup-project src/WebhookInbox.Api --output-dir Migrations
+
+dotnet ef database update --project src/WebhookInbox.Infrastructure --startup-project src/WebhookInbox.Api
+```
+
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
 

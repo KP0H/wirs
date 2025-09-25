@@ -11,6 +11,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{CA655281
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebhookInbox.IntegrationTests", "tests\WebhookInbox.IntegrationTests\WebhookInbox.IntegrationTests.csproj", "{A5E57094-A5A8-4B01-AA38-402909D66928}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebhookInbox.Domain", "src\WebhookInbox.Domain\WebhookInbox.Domain.csproj", "{5053A9E4-C681-83FE-AEB5-9E7AE482F43E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebhookInbox.Infrastructure", "src\WebhookInbox.Infrastructure\WebhookInbox.Infrastructure.csproj", "{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -25,6 +29,14 @@ Global
 		{A5E57094-A5A8-4B01-AA38-402909D66928}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A5E57094-A5A8-4B01-AA38-402909D66928}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A5E57094-A5A8-4B01-AA38-402909D66928}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5053A9E4-C681-83FE-AEB5-9E7AE482F43E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5053A9E4-C681-83FE-AEB5-9E7AE482F43E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5053A9E4-C681-83FE-AEB5-9E7AE482F43E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5053A9E4-C681-83FE-AEB5-9E7AE482F43E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -32,6 +44,8 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{CDA80B57-7D91-35C6-E302-122819F4F514} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{A5E57094-A5A8-4B01-AA38-402909D66928} = {CA655281-0D61-4F19-BD47-0435228079BC}
+		{5053A9E4-C681-83FE-AEB5-9E7AE482F43E} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{50E4B9FA-ABF2-3822-EAB1-3D679F45A0D8} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {0A06CA57-A0B7-4AE0-BDA8-2822ACD3511D}
