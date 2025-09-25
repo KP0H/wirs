@@ -13,6 +13,20 @@ A mini-service for secure webhook reception, storage, observability, and reliabl
   - Observability: structured logs, traces, metrics (Prometheus exporter).
   - DevOps: Docker Compose stack, GitHub Actions CI.
 
+## Quick Start
+
+### Ingest a webhook
+```bash
+curl -i -X POST http://localhost:8080/api/inbox/github \
+  -H 'Content-Type: application/json' \
+  -H 'X-Test: abc' \
+  -d '{"ok": true}'
+```
+
+**Expected**: HTTP/1.1 202 Accepted  
+**Body**: {"eventId":"<GUID>"}  
+**Location header**: /api/events/<GUID>
+
 ## Development
 
 ### Database (EF Core + PostgreSQL)
