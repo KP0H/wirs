@@ -15,6 +15,8 @@ Created: 2025-09-25
 ## Backoff
 1m → 5m → 15m → 1h → 6h → DLQ.
 
+For compatibility with SQLite-based tests, interim ordering in the worker uses Id. In retry milestone we will schedule by NextAttemptAt (UTC) and order accordingly.
+
 ## Metrics
 - deliveries_total{status}
 - retry_scheduled_total

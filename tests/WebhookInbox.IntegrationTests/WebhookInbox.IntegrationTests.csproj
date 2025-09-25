@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\WebhookInbox.Api\WebhookInbox.Api.csproj" />
     <ProjectReference Include="..\..\src\WebhookInbox.Domain\WebhookInbox.Domain.csproj" />
     <ProjectReference Include="..\..\src\WebhookInbox.Infrastructure\WebhookInbox.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\WebhookInbox.Worker\WebhookInbox.Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>
