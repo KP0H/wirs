@@ -1,10 +1,15 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using WebhookInbox.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
 // ---- Services ----
 builder.Services.AddEndpointsApiExplorer();
@@ -16,6 +21,8 @@ builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy("OK"));
 
 var app = builder.Build();
+
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 // ---- Middleware ----
 if (app.Environment.IsDevelopment())
