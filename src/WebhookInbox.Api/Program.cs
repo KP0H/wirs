@@ -76,9 +76,9 @@ app.MapPost("/api/inbox/{source}", async (
     }
 
     // Normalize headers to string[] for jsonb
-    var headersDict = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+    var headersDict = new Dictionary<string, string?[]>(StringComparer.OrdinalIgnoreCase);
     foreach (var h in request.Headers)
-        headersDict[h.Key] = h.Value.ToArray();
+        headersDict[h.Key] = [.. h.Value];
 
     // Serialize headers to a JsonDocument (maps to jsonb)
     var headersJson = JsonSerializer.SerializeToDocument(headersDict, new JsonSerializerOptions
