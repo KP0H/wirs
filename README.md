@@ -48,6 +48,27 @@ dotnet ef migrations add Initial --project src/WebhookInbox.Infrastructure --sta
 dotnet ef database update --project src/WebhookInbox.Infrastructure --startup-project src/WebhookInbox.Api
 ```
 
+### Background dispatcher
+Run the worker locally:
+```bash
+dotnet run --project src/WebhookInbox.Worker
+```
+
+#### Retry & Backoff
+
+Inline retries: configured via **.NET Resilience** (`Microsoft.Extensions.Http.Resilience`)
+for HttpClient "delivery". Controlled by `Delivery:InlineRetryCount` (default 2).
+Exponential-style backoff with jitter is applied via a custom DelayGenerator.
+Scheduled backoff (between cycles): `Delivery:BackoffSeconds` (default `[60,300,900,3600,21600]`).
+Max attempts (per Event+Endpoint): `Delivery:MaxAttempts` (default 6).  
+On exhaustion, event is marked as **DeadLetter**.
+
+Configuration:
+
+`Delivery:PollIntervalSeconds` — polling interval  
+`Delivery:BatchSize` — events per cycle  
+`Delivery:HttpTimeoutSeconds` — HttpClient timeout  
+
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
 
