@@ -1,27 +1,33 @@
 ---
 RFC: 0002
 Title: Dispatcher & Retry Policy
-Status: Draft
+Status: Active
 Owners: Dmitrii [KP0H™] Pelevin
 Created: 2025-09-25
 ---
 
 ## Scope
-- Scheduling of attempts (NextAttemptAt).
-- Exponential backoff with jitter (Polly).
+- Inline retries via **.NET Resilience** (using `AddResilienceHandler` and a jittered `DelayGenerator`).
+- Scheduled retries via `NextAttemptAt` using the `BackoffSeconds` list.
+- Dead-letter queue (DLQ) when `MaxAttempts` is reached or the backoff sequence is exhausted.
 - Per-endpoint rate limiting.
-- DLQ criteria.
 
-## Backoff
-1m → 5m → 15m → 1h → 6h → DLQ.
+### Retry & Backoff
+- Inline retries: `Delivery:InlineRetryCount` (default: 2, jittered).  
+- Scheduled backoff (between cycles): `Delivery:BackoffSeconds` (default: `[60,300,900,3600,21600]`).  
+- Max attempts (per Event+Endpoint): `Delivery:MaxAttempts` (default: 6).  
+- On exhaustion, the event is marked as **DeadLetter**.
 
-For compatibility with SQLite-based tests, interim ordering in the worker uses Id. In retry milestone we will schedule by NextAttemptAt (UTC) and order accordingly.
+## Trade-offs
+For compatibility with SQLite-based tests, interim ordering in the worker uses `Id`.  
+In the retry milestone we will schedule by `NextAttemptAt` (UTC) and order accordingly.
 
 ## Metrics
-- deliveries_total{status}
-- retry_scheduled_total
-- delivery_duration_ms
+- `deliveries_total{status="success|failed|deadletter"}`
+- `retry_scheduled_total`
+- `delivery_duration_ms`
 
 ## Exit Criteria (M2)
-- Failed endpoint causes ≥2 retries with backoff.
-- DLQ reached after max attempts.
+- Inline retries triggered for transient errors (≥2 attempts with jitter).  
+- Scheduled retries respect `BackoffSeconds`.  
+- DLQ is reached after `MaxAttempts`.
