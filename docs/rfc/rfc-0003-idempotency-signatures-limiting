@@ -1,0 +1,78 @@
+---
+RFC: 0003
+Title: Idempotency, HMAC Signatures & Rate Limiting
+Status: Active
+Owners: Dmitrii [KP0H™] Pelevin
+Created: 2025-09-26
+---
+
+## Summary
+Introduce mechanisms to guarantee safe ingestion of webhook events:
+- **Idempotency** to prevent duplicates.
+- **HMAC signature validation** for authenticity.
+- **Rate limiting** per endpoint to protect downstream services.
+
+## Problem / Motivation
+Webhook integrations face recurring problems:
+- Duplicate deliveries (retries from providers).
+- Forged or replayed requests.
+- Overloaded destinations if a single endpoint receives too many requests.
+
+We need to ensure safety, authenticity, and fairness at the ingestion and dispatch stages.
+
+## Scope
+- **Idempotency / Deduplication**:
+  - Redis keys to detect duplicate events: `idem:{source}:{key}` → `eventId`.
+  - TTL on keys (configurable, default: 24h).
+  - Key resolution priority: `Idempotency-Key` → `X-Idempotency-Key` → `X-Hub-Signature-256` → SHA-256(payload).
+  - Duplicates return **200 OK** with the same `{eventId, duplicate=true}` without inserting a new row.
+- **HMAC Signatures**:
+  - Support for GitHub-style `X-Hub-Signature-256`.
+  - Support for Stripe-style `Stripe-Signature`.
+  - Per-endpoint secret stored securely in DB.
+  - Reject invalid or missing signatures with `401 Unauthorized`.
+- **Rate Limiting**:
+  - ASP.NET Core rate-limiting middleware at API layer (fixed-window).
+  - Configurable per endpoint: requests per minute.
+  - Worker-side enforcement: ensure dispatches don’t exceed endpoint limits.
+
+## Non-Goals
+- Multi-tenant key management.
+- Complex OAuth2 flows.
+- Pluggable signature algorithms beyond HMAC-SHA256 (future).
+
+## Architectural Overview
+- **API ingestion path**:
+  - On `POST /api/inbox/{source}`: validate signature if endpoint has secret.
+  - Check Redis for idempotency key → if duplicate, return existing `eventId`.
+  - Otherwise persist Event and create deduplication key in Redis.
+- **Worker dispatch path**:
+  - For each Event+Endpoint, enforce per-endpoint rate limit before delivery.
+  - If exceeded, schedule retry with backoff.
+
+## Trade-offs
+- Using Redis for idempotency is simple, but requires Redis availability.
+- Rejecting unsigned events may break integrations; optional enforcement per endpoint.
+- Fixed-window rate limiting is easy, but less precise than token-bucket.
+
+## Metrics
+- `idempotent_hits_total` — number of deduplicated events.
+- `signature_validation_failures_total`
+- `rate_limit_blocked_total`
+- `rate_limit_current{endpoint}` gauge (active requests count).
+
+## Security
+- HMAC prevents forgery and replay.
+- Redis-based deduplication prevents accidental duplicate ingestion.
+- Rate limiting prevents downstream denial-of-service.
+
+## Risks
+- Redis outage disables idempotency checks (duplicates possible).
+- Clock skew can affect signature validation (for Stripe-style signed timestamps).
+- Rate-limiting misconfiguration can block legitimate traffic.
+
+## Exit Criteria
+- Duplicate ingestion requests return same `eventId` without creating a new row.
+- Events with invalid HMAC signatures are rejected with `401`.
+- API responds with `429 Too Many Requests` if per-endpoint limit exceeded.
+- Metrics for idempotency, signature validation, and rate limiting exposed via Prometheus.
