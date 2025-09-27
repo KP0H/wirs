@@ -69,6 +69,28 @@ Configuration:
 `Delivery:BatchSize` — events per cycle  
 `Delivery:HttpTimeoutSeconds` — HttpClient timeout  
 
+### Idempotency & Deduplication
+The ingestion endpoint (`POST /api/inbox/{source}`) is idempotent.
+
+Key resolution priority:
+1. `Idempotency-Key`
+2. `X-Idempotency-Key`
+3. `X-Hub-Signature-256`
+4. SHA-256(payload)
+
+Redis key format: `idem:{source}:{key}` → `eventId` (TTL = `Idempotency:KeyTtlSeconds`, default 86400).  
+Duplicates return **200 OK** with the same `{ eventId, duplicate: true }` and no new row is inserted.
+
+**Config:**
+```json
+{
+  "Idempotency": { "KeyTtlSeconds": 86400 },
+  "ConnectionStrings": {
+    "Postgres": "...",
+    "Redis": "localhost:6379"
+  }
+}
+
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
 

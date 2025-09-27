@@ -4,7 +4,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using System.Text.Json;
+using WebhookInbox.Api.Idempotency;
 using WebhookInbox.Domain.Entities;
 using WebhookInbox.Infrastructure;
 
@@ -12,6 +15,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+
+// Redis (ConnectionMultiplexer)
+var redisConn = builder.Configuration.GetValue<string>("REDIS__CONNECTION") ?? builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConn))
+{
+    builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConn));
+    builder.Services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
+}
+else
+{
+    // fallback local without Redis (non production)
+    builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+}
 
 // ---- Services ----
 builder.Services.AddEndpointsApiExplorer();
@@ -62,6 +78,8 @@ app.MapPost("/api/inbox/{source}", async (
     string source,
     HttpRequest request,
     AppDbContext db,
+    IIdempotencyStore idem,
+    IOptions<IdempotencyOptions> idemOpts,
     CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(source))
@@ -75,10 +93,24 @@ app.MapPost("/api/inbox/{source}", async (
         payload = ms.ToArray();
     }
 
-    // Normalize headers to string[] for jsonb
+    // Resolve idempotency key
+    var rawKey = IdempotencyKeyResolver.Resolve(request, payload);
+    var namespacedKey = IdempotencyKeyResolver.Namespaced(source, rawKey);
+    var ttl = TimeSpan.FromSeconds(idemOpts.Value.KeyTtlSeconds);
+
+    // Try reserve key
+    var tentativeId = Guid.NewGuid();
+    var (created, eventId) = await idem.TryReserveAsync(namespacedKey, tentativeId, ttl, ct);
+
+    if (!created)
+    {
+        // Duplicate – return existing eventId, no DB write
+        return Results.Ok(new { eventId, duplicate = true });
+    }
+
+    // Build headers JSON
     var headersDict = new Dictionary<string, string?[]>(StringComparer.OrdinalIgnoreCase);
-    foreach (var h in request.Headers)
-        headersDict[h.Key] = [.. h.Value];
+    foreach (var h in request.Headers) headersDict[h.Key] = [.. h.Value];
 
     // Serialize headers to a JsonDocument (maps to jsonb)
     var headersJson = JsonSerializer.SerializeToDocument(headersDict, new JsonSerializerOptions
@@ -88,7 +120,7 @@ app.MapPost("/api/inbox/{source}", async (
 
     var entity = new Event
     {
-        Id = Guid.NewGuid(),
+        Id = eventId,
         Source = source,
         ReceivedAt = DateTimeOffset.UtcNow,
         Headers = headersJson,
@@ -102,7 +134,7 @@ app.MapPost("/api/inbox/{source}", async (
 
     // Return 202 with Location and body { eventId }
     var location = $"/api/events/{entity.Id}";
-    return Results.Accepted(location, new { eventId = entity.Id });
+    return Results.Accepted(location, new { eventId = entity.Id, duplicate = false });
 })
 .WithName("InboxIngestion")
 .Produces(StatusCodes.Status202Accepted)

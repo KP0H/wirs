@@ -22,9 +22,10 @@ We need to ensure safety, authenticity, and fairness at the ingestion and dispat
 
 ## Scope
 - **Idempotency / Deduplication**:
-  - Redis keys to detect duplicate events.
+  - Redis keys to detect duplicate events: `idem:{source}:{key}` → `eventId`.
   - TTL on keys (configurable, default: 24h).
-  - Based on `Idempotency-Key` header (if present) or HMAC hash of payload.
+  - Key resolution priority: `Idempotency-Key` → `X-Idempotency-Key` → `X-Hub-Signature-256` → SHA-256(payload).
+  - Duplicates return **200 OK** with the same `{eventId, duplicate=true}` without inserting a new row.
 - **HMAC Signatures**:
   - Support for GitHub-style `X-Hub-Signature-256`.
   - Support for Stripe-style `Stripe-Signature`.
