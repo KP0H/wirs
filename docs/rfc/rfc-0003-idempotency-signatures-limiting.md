@@ -33,8 +33,9 @@ We need to ensure safety, authenticity, and fairness at the ingestion and dispat
   - Reject invalid or missing signatures with `401 Unauthorized`.
 - **Rate Limiting**:
   - ASP.NET Core rate-limiting middleware at API layer (fixed-window).
-  - Configurable per endpoint: requests per minute.
+  - Configurable per endpoint: requests per minute plus per-source overrides.
   - Worker-side enforcement: ensure dispatches don’t exceed endpoint limits.
+  - API ingress: fixed window per {source} (ASP.NET Core Rate Limiter), responds with 429 + Retry-After.
 
 ## Non-Goals
 - Multi-tenant key management.
@@ -156,3 +157,4 @@ async Task SendStripeAsync(object body)
 ```
 
 Run the methods above to emulate providers during development.
+
