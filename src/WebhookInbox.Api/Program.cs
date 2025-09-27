@@ -7,7 +7,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using WebhookInbox.Api.Idempotency;
+using WebhookInbox.Api.RateLimiting;
 using WebhookInbox.Api.Signatures;
 using WebhookInbox.Domain.Entities;
 using WebhookInbox.Infrastructure;
@@ -15,7 +17,7 @@ using WebhookInbox.Infrastructure;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<IdempotencyOptions>(builder.Configuration.GetSection("Idempotency"));
-
+builder.Services.Configure<RateLimitOptions>(builder.Configuration.GetSection("RateLimiting"));
 builder.Services.Configure<SignatureOptions>(builder.Configuration.GetSection("Signatures"));
 builder.Services.AddSingleton<ISignatureValidator, SignatureValidator>();
 
@@ -39,6 +41,42 @@ else
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// ---- Limiter ----
+builder.Services.AddRateLimiter(opt =>
+{
+    opt.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Retry-After + log
+    opt.OnRejected = async (ctx, token) =>
+    {
+        if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            ctx.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+
+        await ctx.HttpContext.Response.WriteAsJsonAsync(new { error = "rate_limited" }, cancellationToken: token);
+    };
+
+    opt.AddPolicy("inbox-per-source", httpContext =>
+    {
+        var cfg = httpContext.RequestServices.GetRequiredService<IOptions<RateLimitOptions>>().Value;
+        var source = (httpContext.Request.RouteValues.TryGetValue("source", out var v) ? v?.ToString() : null) ?? "default";
+
+        var rpm = cfg.Sources.FirstOrDefault(s => string.Equals(s.Source, source, StringComparison.OrdinalIgnoreCase))?.RequestsPerMinute
+                  ?? cfg.DefaultRequestsPerMinute;
+
+        var permits = Math.Max(rpm, 0);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: $"inbox:{source}",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permits,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            });
+    });
+});
+
 // Built-in health checks (readiness/liveness)
 // TODO: Db/Redis checks
 builder.Services.AddHealthChecks()
@@ -58,6 +96,9 @@ if (app.Environment.IsDevelopment())
         c.RoutePrefix = "swagger";
     });
 }
+
+
+app.UseRateLimiter();
 
 // ---- Minimal endpoints ----
 
@@ -148,6 +189,7 @@ app.MapPost("/api/inbox/{source}", async (
     var location = $"/api/events/{entity.Id}";
     return Results.Accepted(location, new { eventId = entity.Id, duplicate = false });
 })
+.RequireRateLimiting("inbox-per-source")
 .WithName("InboxIngestion")
 .Produces(StatusCodes.Status202Accepted)
 .Produces(StatusCodes.Status400BadRequest)

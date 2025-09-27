@@ -108,6 +108,22 @@ Duplicates return **200 OK** with the same `{ eventId, duplicate: true }` and no
 
 or environment: `REDIS__CONNECTION=redis:6379`
 
+### API Rate Limiting (ingress)
+
+The inbound endpoint `POST /api/inbox/{source}` is protected by a fixed-window rate limiter (ASP.NET Core Rate Limiting).
+The limit is applied per source (`{source}`), with the partition key being the source value itself.
+
+**Config:**
+```json
+"RateLimiting": {
+  "DefaultRequestsPerMinute": 120,
+  "Sources": [
+    { "Source": "github", "RequestsPerMinute": 60 },
+    { "Source": "stripe", "RequestsPerMinute": 30 }
+  ]
+}
+```
+
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
 
