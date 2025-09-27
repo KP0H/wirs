@@ -8,10 +8,16 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
 using WebhookInbox.Api.Idempotency;
+using WebhookInbox.Api.Signatures;
 using WebhookInbox.Domain.Entities;
 using WebhookInbox.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<IdempotencyOptions>(builder.Configuration.GetSection("Idempotency"));
+
+builder.Services.Configure<SignatureOptions>(builder.Configuration.GetSection("Signatures"));
+builder.Services.AddSingleton<ISignatureValidator, SignatureValidator>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
@@ -80,6 +86,7 @@ app.MapPost("/api/inbox/{source}", async (
     AppDbContext db,
     IIdempotencyStore idem,
     IOptions<IdempotencyOptions> idemOpts,
+    ISignatureValidator sigValidator,
     CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(source))
@@ -92,6 +99,11 @@ app.MapPost("/api/inbox/{source}", async (
         await request.Body.CopyToAsync(ms, ct);
         payload = ms.ToArray();
     }
+
+    // Signature validation (if configured/required)
+    var (ok, reason) = await sigValidator.ValidateAsync(source, request, payload, ct);
+    if (!ok)
+        return Results.Unauthorized();
 
     // Resolve idempotency key
     var rawKey = IdempotencyKeyResolver.Resolve(request, payload);
@@ -125,7 +137,7 @@ app.MapPost("/api/inbox/{source}", async (
         ReceivedAt = DateTimeOffset.UtcNow,
         Headers = headersJson,
         Payload = payload,
-        SignatureStatus = SignatureStatus.None,
+        SignatureStatus = SignatureStatus.Verified,
         Status = EventStatus.New
     };
 
