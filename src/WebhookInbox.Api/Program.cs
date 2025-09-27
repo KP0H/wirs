@@ -4,18 +4,78 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using System.Text.Json;
+using System.Threading.RateLimiting;
+using WebhookInbox.Api.Idempotency;
+using WebhookInbox.Api.RateLimiting;
+using WebhookInbox.Api.Signatures;
 using WebhookInbox.Domain.Entities;
 using WebhookInbox.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.Configure<IdempotencyOptions>(builder.Configuration.GetSection("Idempotency"));
+builder.Services.Configure<RateLimitOptions>(builder.Configuration.GetSection("RateLimiting"));
+builder.Services.Configure<SignatureOptions>(builder.Configuration.GetSection("Signatures"));
+builder.Services.AddSingleton<ISignatureValidator, SignatureValidator>();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+
+// Redis (ConnectionMultiplexer)
+var redisConn = builder.Configuration.GetValue<string>("REDIS__CONNECTION") ?? builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConn))
+{
+    builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConn));
+    builder.Services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
+}
+else
+{
+    // fallback local without Redis (non production)
+    builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+}
 
 // ---- Services ----
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// ---- Limiter ----
+builder.Services.AddRateLimiter(opt =>
+{
+    opt.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Retry-After + log
+    opt.OnRejected = async (ctx, token) =>
+    {
+        if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            ctx.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+
+        await ctx.HttpContext.Response.WriteAsJsonAsync(new { error = "rate_limited" }, cancellationToken: token);
+    };
+
+    opt.AddPolicy("inbox-per-source", httpContext =>
+    {
+        var cfg = httpContext.RequestServices.GetRequiredService<IOptions<RateLimitOptions>>().Value;
+        var source = (httpContext.Request.RouteValues.TryGetValue("source", out var v) ? v?.ToString() : null) ?? "default";
+
+        var rpm = cfg.Sources.FirstOrDefault(s => string.Equals(s.Source, source, StringComparison.OrdinalIgnoreCase))?.RequestsPerMinute
+                  ?? cfg.DefaultRequestsPerMinute;
+
+        var permits = Math.Max(rpm, 0);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: $"inbox:{source}",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permits,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            });
+    });
+});
 
 // Built-in health checks (readiness/liveness)
 // TODO: Db/Redis checks
@@ -36,6 +96,9 @@ if (app.Environment.IsDevelopment())
         c.RoutePrefix = "swagger";
     });
 }
+
+
+app.UseRateLimiter();
 
 // ---- Minimal endpoints ----
 
@@ -62,6 +125,9 @@ app.MapPost("/api/inbox/{source}", async (
     string source,
     HttpRequest request,
     AppDbContext db,
+    IIdempotencyStore idem,
+    IOptions<IdempotencyOptions> idemOpts,
+    ISignatureValidator sigValidator,
     CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(source))
@@ -75,10 +141,29 @@ app.MapPost("/api/inbox/{source}", async (
         payload = ms.ToArray();
     }
 
-    // Normalize headers to string[] for jsonb
+    // Signature validation (if configured/required)
+    var (ok, reason) = await sigValidator.ValidateAsync(source, request, payload, ct);
+    if (!ok)
+        return Results.Unauthorized();
+
+    // Resolve idempotency key
+    var rawKey = IdempotencyKeyResolver.Resolve(request, payload);
+    var namespacedKey = IdempotencyKeyResolver.Namespaced(source, rawKey);
+    var ttl = TimeSpan.FromSeconds(idemOpts.Value.KeyTtlSeconds);
+
+    // Try reserve key
+    var tentativeId = Guid.NewGuid();
+    var (created, eventId) = await idem.TryReserveAsync(namespacedKey, tentativeId, ttl, ct);
+
+    if (!created)
+    {
+        // Duplicate – return existing eventId, no DB write
+        return Results.Ok(new { eventId, duplicate = true });
+    }
+
+    // Build headers JSON
     var headersDict = new Dictionary<string, string?[]>(StringComparer.OrdinalIgnoreCase);
-    foreach (var h in request.Headers)
-        headersDict[h.Key] = [.. h.Value];
+    foreach (var h in request.Headers) headersDict[h.Key] = [.. h.Value];
 
     // Serialize headers to a JsonDocument (maps to jsonb)
     var headersJson = JsonSerializer.SerializeToDocument(headersDict, new JsonSerializerOptions
@@ -88,12 +173,12 @@ app.MapPost("/api/inbox/{source}", async (
 
     var entity = new Event
     {
-        Id = Guid.NewGuid(),
+        Id = eventId,
         Source = source,
         ReceivedAt = DateTimeOffset.UtcNow,
         Headers = headersJson,
         Payload = payload,
-        SignatureStatus = SignatureStatus.None,
+        SignatureStatus = SignatureStatus.Verified,
         Status = EventStatus.New
     };
 
@@ -102,8 +187,9 @@ app.MapPost("/api/inbox/{source}", async (
 
     // Return 202 with Location and body { eventId }
     var location = $"/api/events/{entity.Id}";
-    return Results.Accepted(location, new { eventId = entity.Id });
+    return Results.Accepted(location, new { eventId = entity.Id, duplicate = false });
 })
+.RequireRateLimiting("inbox-per-source")
 .WithName("InboxIngestion")
 .Produces(StatusCodes.Status202Accepted)
 .Produces(StatusCodes.Status400BadRequest)

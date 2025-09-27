@@ -1,35 +1,37 @@
 ﻿using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using WebhookInbox.Infrastructure;
 
-namespace WebhookInbox.IntegrationTests.Factories;
-
-public class ApiFactory : WebApplicationFactory<Program>
+public class WebAppFactoryWithInMemoryIdem : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development"); // for Swagger
-
+        builder.UseEnvironment("Development");
         builder.ConfigureServices(services =>
         {
+            // Replace DbContext with SQLite in-memory
             services.RemoveAll<DbContextOptions<AppDbContext>>();
             services.RemoveAll<AppDbContext>();
             services.RemoveAll<IDbContextFactory<AppDbContext>>();
             services.RemoveAll<PooledDbContextFactory<AppDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<AppDbContext>>();
 
-            var conn = new SqliteConnection("DataSource=:memory:");
+            var conn = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
             conn.Open();
             services.AddSingleton(conn);
+            services.AddDbContext<AppDbContext>(opt => opt.UseSqlite(conn));
 
-            services.AddDbContext<AppDbContext>(o => o.UseSqlite(conn));
+            // Replace idempotency store with InMemory
+            var idemDesc = services.SingleOrDefault(d => d.ServiceType == typeof(WebhookInbox.Api.Idempotency.IIdempotencyStore));
+            if (idemDesc is not null) services.Remove(idemDesc);
+            services.AddSingleton<WebhookInbox.Api.Idempotency.IIdempotencyStore, WebhookInbox.Api.Idempotency.InMemoryIdempotencyStore>();
 
-            using var sp = services.BuildServiceProvider();
+            // Ensure DB
+            var sp = services.BuildServiceProvider();
             using var scope = sp.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             db.Database.EnsureCreated();

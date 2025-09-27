@@ -16,11 +16,25 @@ A mini-service for secure webhook reception, storage, observability, and reliabl
 ## Quick Start
 
 ### Ingest a webhook
+
+Without sign
 ```bash
-curl -i -X POST http://localhost:8080/api/inbox/github \
+curl -i -X POST http://localhost:8080/api/inbox/test \
   -H 'Content-Type: application/json' \
   -H 'X-Test: abc' \
   -d '{"ok": true}'
+```
+
+With sign
+```bash
+SECRET='<your-github-secret>'
+BODY='{"ok":true}'
+SIG="sha256=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -binary | xxd -p -c 256)"
+
+curl -i -X POST http://localhost:8080/api/inbox/github \
+  -H "Content-Type: application/json" \
+  -H "X-Hub-Signature-256: $SIG" \
+  -d "$BODY"
 ```
 
 **Expected**: HTTP/1.1 202 Accepted  
@@ -68,6 +82,47 @@ Configuration:
 `Delivery:PollIntervalSeconds` — polling interval  
 `Delivery:BatchSize` — events per cycle  
 `Delivery:HttpTimeoutSeconds` — HttpClient timeout  
+
+### Idempotency & Deduplication
+The ingestion endpoint (`POST /api/inbox/{source}`) is idempotent.
+
+Key resolution priority:
+1. `Idempotency-Key`
+2. `X-Idempotency-Key`
+3. `X-Hub-Signature-256`
+4. SHA-256(payload)
+
+Redis key format: `idem:{source}:{key}` → `eventId` (TTL = `Idempotency:KeyTtlSeconds`, default 86400).  
+Duplicates return **200 OK** with the same `{ eventId, duplicate: true }` and no new row is inserted.
+
+**Config:**
+```json
+{
+  "Idempotency": { "KeyTtlSeconds": 86400 },
+  "ConnectionStrings": {
+    "Postgres": "...",
+    "Redis": "localhost:6379"
+  }
+}
+```
+
+or environment: `REDIS__CONNECTION=redis:6379`
+
+### API Rate Limiting (ingress)
+
+The inbound endpoint `POST /api/inbox/{source}` is protected by a fixed-window rate limiter (ASP.NET Core Rate Limiting).
+The limit is applied per source (`{source}`), with the partition key being the source value itself.
+
+**Config:**
+```json
+"RateLimiting": {
+  "DefaultRequestsPerMinute": 120,
+  "Sources": [
+    { "Source": "github", "RequestsPerMinute": 60 },
+    { "Source": "stripe", "RequestsPerMinute": 30 }
+  ]
+}
+```
 
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
