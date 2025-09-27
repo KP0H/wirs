@@ -12,15 +12,15 @@ public sealed class SignatureValidator(IOptions<SignatureOptions> options) : ISi
     public Task<(bool Ok, string? Reason)> ValidateAsync(string source, HttpRequest req, ReadOnlyMemory<byte> payload, CancellationToken ct)
     {
         var cfg = _opts.Sources.FirstOrDefault(s => string.Equals(s.Source, source, StringComparison.OrdinalIgnoreCase));
-        if (cfg is null) return Task.FromResult((true, "no-config"));
-        if (!cfg.Require) return Task.FromResult((true, "skipped"));
-        if (string.IsNullOrWhiteSpace(cfg.Secret)) return Task.FromResult((false, "secret-missing"));
+        if (cfg is null) return Result((true, "no-config"));
+        if (!cfg.Require) return Result((true, "skipped"));
+        if (string.IsNullOrWhiteSpace(cfg.Secret)) return Result((false, "secret-missing"));
 
         return cfg.Provider.ToLowerInvariant() switch
         {
-            "github" => Task.FromResult(ValidateGitHub(cfg.Secret!, req, payload)),
-            "stripe" => Task.FromResult(ValidateStripe(cfg.Secret!, cfg.ToleranceSeconds, req, payload)),
-            _ => Task.FromResult((false, $"unknown-provider:{cfg.Provider}"))
+            "github" => Result(ValidateGitHub(cfg.Secret!, req, payload)),
+            "stripe" => Result(ValidateStripe(cfg.Secret!, cfg.ToleranceSeconds, req, payload)),
+            _ => Result((false, $"unknown-provider:{cfg.Provider}"))
         };
     }
 
@@ -34,12 +34,13 @@ public sealed class SignatureValidator(IOptions<SignatureOptions> options) : ISi
         if (!provided.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             return (false, "bad-format");
 
-        var sigHex = provided.Substring(prefix.Length);
+        var sigHex = provided[prefix.Length..];
         if (!TryParseHex(sigHex, out var providedBytes)) return (false, "bad-hex");
 
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
         var computed = hmac.ComputeHash(payload.Span.ToArray());
-        return (FixedTimeEquals(computed, providedBytes), FixedTimeEquals(computed, providedBytes) ? null : "mismatch");
+        var matches = FixedTimeEquals(computed, providedBytes);
+        return (matches, matches ? null : "mismatch");
     }
 
     private static (bool Ok, string? Reason) ValidateStripe(string secret, int toleranceSeconds, HttpRequest req, ReadOnlyMemory<byte> payload)
@@ -77,7 +78,12 @@ public sealed class SignatureValidator(IOptions<SignatureOptions> options) : ISi
 
     private static bool TryParseHex(string hex, out byte[] bytes)
     {
-        if (hex.Length % 2 != 0) { bytes = Array.Empty<byte>(); return false; }
+        if (hex.Length % 2 != 0)
+        {
+            bytes = Array.Empty<byte>();
+            return false;
+        }
+
         try
         {
             bytes = Convert.FromHexString(hex);
@@ -93,8 +99,11 @@ public sealed class SignatureValidator(IOptions<SignatureOptions> options) : ISi
     private static bool FixedTimeEquals(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
     {
         if (a.Length != b.Length) return false;
-        int diff = 0;
-        for (int i = 0; i < a.Length; i++) diff |= a[i] ^ b[i];
+        var diff = 0;
+        for (var i = 0; i < a.Length; i++) diff |= a[i] ^ b[i];
         return diff == 0;
     }
+
+    private static Task<(bool Ok, string? Reason)> Result((bool Ok, string? Reason) value) => Task.FromResult<(bool Ok, string? Reason)>(value);
 }
+
