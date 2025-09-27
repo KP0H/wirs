@@ -3,20 +3,39 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using WebhookInbox.Infrastructure;
 
 namespace WebhookInbox.IntegrationTests.Factories;
 
-public class ApiFactory : WebApplicationFactory<Program>
+public class SignatureApiFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development"); // for Swagger
+        builder.UseEnvironment("Development");
+        builder.ConfigureAppConfiguration((ctx, cfg) =>
+        {
+            var dict = new Dictionary<string, string?>
+            {
+                ["Signatures:Sources:0:Source"] = "github",
+                ["Signatures:Sources:0:Provider"] = "github",
+                ["Signatures:Sources:0:Require"] = "true",
+                ["Signatures:Sources:0:Secret"] = "gh_test_secret",
+
+                ["Signatures:Sources:1:Source"] = "stripe",
+                ["Signatures:Sources:1:Provider"] = "stripe",
+                ["Signatures:Sources:1:Require"] = "true",
+                ["Signatures:Sources:1:ToleranceSeconds"] = "300",
+                ["Signatures:Sources:1:Secret"] = "stripe_test_secret"
+            };
+            cfg.AddInMemoryCollection(dict!);
+        });
 
         builder.ConfigureServices(services =>
         {
+            // Replace DbContext with SQLite in-memory
             services.RemoveAll<DbContextOptions<AppDbContext>>();
             services.RemoveAll<AppDbContext>();
             services.RemoveAll<IDbContextFactory<AppDbContext>>();
@@ -26,10 +45,9 @@ public class ApiFactory : WebApplicationFactory<Program>
             var conn = new SqliteConnection("DataSource=:memory:");
             conn.Open();
             services.AddSingleton(conn);
-
             services.AddDbContext<AppDbContext>(o => o.UseSqlite(conn));
 
-            using var sp = services.BuildServiceProvider();
+            var sp = services.BuildServiceProvider();
             using var scope = sp.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             db.Database.EnsureCreated();

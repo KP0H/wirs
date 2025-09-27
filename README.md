@@ -16,11 +16,25 @@ A mini-service for secure webhook reception, storage, observability, and reliabl
 ## Quick Start
 
 ### Ingest a webhook
+
+Without sign
 ```bash
-curl -i -X POST http://localhost:8080/api/inbox/github \
+curl -i -X POST http://localhost:8080/api/inbox/test \
   -H 'Content-Type: application/json' \
   -H 'X-Test: abc' \
   -d '{"ok": true}'
+```
+
+With sign
+```bash
+SECRET='<your-github-secret>'
+BODY='{"ok":true}'
+SIG="sha256=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -binary | xxd -p -c 256)"
+
+curl -i -X POST http://localhost:8080/api/inbox/github \
+  -H "Content-Type: application/json" \
+  -H "X-Hub-Signature-256: $SIG" \
+  -d "$BODY"
 ```
 
 **Expected**: HTTP/1.1 202 Accepted  
@@ -90,6 +104,9 @@ Duplicates return **200 OK** with the same `{ eventId, duplicate: true }` and no
     "Redis": "localhost:6379"
   }
 }
+```
+
+or environment: `REDIS__CONNECTION=redis:6379`
 
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
