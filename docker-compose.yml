@@ -76,6 +76,22 @@ services:
       REDIS__CONNECTION: ${WEBHOOKINBOX_REDIS}
     restart: unless-stopped
 
+  ui:
+    build:
+      context: .
+      dockerfile: docker/ui/Dockerfile
+    container_name: webhookinbox-ui
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://0.0.0.0:8081
+      ApiBaseUrl: http://api:8080
+    ports:
+      - "${WEBHOOKINBOX_UI_PORT:-8081}:8081"
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v2.53.0
     container_name: webhookinbox-prometheus

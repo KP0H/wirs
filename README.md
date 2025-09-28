@@ -157,6 +157,7 @@ Environment defaults live in `.env.example`; copy it to `.env` and adjust as nee
 
 What you get:
 - API on http://localhost:8080 (metrics at `/metrics`).
+- Admin UI on http://localhost:8081.
 - Prometheus on http://localhost:9090.
 - Grafana on http://localhost:3000 (defaults: `admin` / `admin`).
 - API applies EF Core migrations automatically on startup when `AutoMigrate=true` (Docker Compose sets this by default).
@@ -167,6 +168,23 @@ To stop and remove containers:
 ```bash
 docker compose down -v
 ```
+
+## Admin UI
+
+Run the Blazor Server UI to inspect events and delivery attempts:
+
+```bash
+dotnet run --project src/WebhookInbox.UI
+```
+
+By default the UI expects the API at `http://localhost:8080`. Override via configuration (`ApiBaseUrl` in *src/WebhookInbox.UI/appsettings*.json or the `ApiBaseUrl` environment variable).
+
+### Features
+
+- Events table with source, status, and received timestamp.
+- Drill into a single event to inspect headers, raw payload (formatted when JSON), and recorded delivery attempts.
+- Quick navigation back to the events list.
+
 
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
