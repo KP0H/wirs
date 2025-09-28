@@ -1,0 +1,112 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: webhookinbox-postgres
+    environment:
+      POSTGRES_USER: ${WEBHOOKINBOX_DB_USER}
+      POSTGRES_PASSWORD: ${WEBHOOKINBOX_DB_PASSWORD}
+      POSTGRES_DB: ${WEBHOOKINBOX_DB_NAME}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${WEBHOOKINBOX_DB_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: webhookinbox-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    container_name: webhookinbox-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      ConnectionStrings__Postgres: Host=${WEBHOOKINBOX_DB_HOST};Port=5432;Database=${WEBHOOKINBOX_DB_NAME};Username=${WEBHOOKINBOX_DB_USER};Password=${WEBHOOKINBOX_DB_PASSWORD}
+      REDIS__CONNECTION: ${WEBHOOKINBOX_REDIS}
+      Signatures__Sources__0__Source: github
+      Signatures__Sources__0__Provider: github
+      Signatures__Sources__0__Require: "true"
+      Signatures__Sources__0__Secret: ${WEBHOOKINBOX_GITHUB_SECRET}
+      Signatures__Sources__1__Source: stripe
+      Signatures__Sources__1__Provider: stripe
+      Signatures__Sources__1__Require: "true"
+      Signatures__Sources__1__ToleranceSeconds: 300
+      Signatures__Sources__1__Secret: ${WEBHOOKINBOX_STRIPE_SECRET}
+      RateLimiting__DefaultRequestsPerMinute: 120
+      RateLimiting__Sources__0__Source: github
+      RateLimiting__Sources__0__RequestsPerMinute: 60
+      RateLimiting__Sources__1__Source: stripe
+      RateLimiting__Sources__1__RequestsPerMinute: 30
+      AutoMigrate: "true"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    container_name: webhookinbox-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: Host=${WEBHOOKINBOX_DB_HOST};Port=5432;Database=${WEBHOOKINBOX_DB_NAME};Username=${WEBHOOKINBOX_DB_USER};Password=${WEBHOOKINBOX_DB_PASSWORD}
+      REDIS__CONNECTION: ${WEBHOOKINBOX_REDIS}
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: webhookinbox-prometheus
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: webhookinbox-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_LOG_MODE: console
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  grafana-data:

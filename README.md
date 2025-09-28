@@ -124,6 +124,50 @@ The limit is applied per source (`{source}`), with the partition key being the s
 }
 ```
 
+### Observability: OpenTelemetry + Prometheus
+
+API publish **Prometheus** metrics on `/metrics`.
+
+Include standart instructions:
+- ASP.NET Core, HttpClient, Runtime, EF Core
+
+Custom metrics (Meter: `WebhookInbox`):
+- `webhookinbox_events_total{status="ingested|duplicate"}`
+- `webhookinbox_signature_validation_failures_total`
+- `webhookinbox_idempotent_hits_total`
+- `webhookinbox_rate_limit_blocked_total{source}` (for rate limiting)
+- `webhookinbox_deliveries_total{result="success|failed|deadletter"}` (worker)
+- `webhookinbox_delivery_duration_ms` (histograms)
+
+**Local check**
+```bash
+curl http://localhost:8080/metrics
+```
+
+
+## Docker Compose stack
+
+Run the service end-to-end (API, worker, PostgreSQL, Redis, Prometheus, Grafana) with Docker Compose:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+Environment defaults live in `.env.example`; copy it to `.env` and adjust as needed before running compose.
+
+What you get:
+- API on http://localhost:8080 (metrics at `/metrics`).
+- Prometheus on http://localhost:9090.
+- Grafana on http://localhost:3000 (defaults: `admin` / `admin`).
+- API applies EF Core migrations automatically on startup when `AutoMigrate=true` (Docker Compose sets this by default).
+
+A default Grafana dashboard is auto-provisioned from `docker/grafana/dashboards/webhookinbox.json`. For manual import details see [Grafana dashboard docs](docs/observability/grafana-dashboard.md).
+
+To stop and remove containers:
+```bash
+docker compose down -v
+```
+
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
 

@@ -1,8 +1,12 @@
-﻿using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Instrumentation.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Polly;
 using Polly.Retry;
 using System;
@@ -58,5 +62,26 @@ builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 builder.Services.AddScoped<IDeliveryProcessor, DeliveryProcessor>();
 builder.Services.AddHostedService<DeliveryWorker>();
 
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(rb => rb.AddService(serviceName: "WebhookInbox.Worker", serviceVersion: "1.0.0"))
+    .WithMetrics(mb =>
+    {
+        mb.AddHttpClientInstrumentation();
+        mb.AddRuntimeInstrumentation();
+        mb.AddMeter("Microsoft.EntityFrameworkCore");
+        mb.AddMeter("WebhookInbox");
+        // No Prometheus exporter (no HTTP). OTLP later.
+    })
+    .WithTracing(tb =>
+    {
+        tb.AddHttpClientInstrumentation();
+        tb.AddEntityFrameworkCoreInstrumentation();
+    });
+
+
 var host = builder.Build();
 await host.RunAsync();
+
+
+
+

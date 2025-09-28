@@ -1,10 +1,11 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Instrumentation.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using StackExchange.Redis;
 using System.Text.Json;
 using System.Threading.RateLimiting;
@@ -49,6 +50,9 @@ builder.Services.AddRateLimiter(opt =>
     // Retry-After + log
     opt.OnRejected = async (ctx, token) =>
     {
+        WebhookInbox.Api.Observability.Metrics.RateLimitBlocked.Add(1,
+            new KeyValuePair<string, object?>("source", (ctx.HttpContext.Request.RouteValues["source"]?.ToString() ?? "unknown")));
+
         if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
             ctx.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
 
@@ -82,9 +86,41 @@ builder.Services.AddRateLimiter(opt =>
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy("OK"));
 
+
+
+// OpenTelemetry Metrics + Prometheus exporter
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(rb => rb.AddService(serviceName: "WebhookInbox.Api", serviceVersion: "1.0.0"))
+    .WithMetrics(mb =>
+    {
+        mb.AddAspNetCoreInstrumentation();
+        mb.AddHttpClientInstrumentation();
+        mb.AddRuntimeInstrumentation();
+        mb.AddMeter("Microsoft.EntityFrameworkCore");
+        mb.AddMeter("WebhookInbox");
+        mb.AddPrometheusExporter();
+    })
+    .WithTracing(tb =>
+    {
+        tb.AddAspNetCoreInstrumentation();
+        tb.AddHttpClientInstrumentation();
+        tb.AddEntityFrameworkCoreInstrumentation();
+    });
+
 var app = builder.Build();
 
+var autoMigrate = app.Configuration.GetValue<bool?>("AutoMigrate") ?? false;
+if (autoMigrate)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
+
+
 
 // ---- Middleware ----
 if (app.Environment.IsDevelopment())
@@ -101,6 +137,8 @@ if (app.Environment.IsDevelopment())
 app.UseRateLimiter();
 
 // ---- Minimal endpoints ----
+// metrics
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 // root ping
 app.MapGet("/", () => Results.Ok(new { service = "WebhookInbox.Api", status = "ok" }))
@@ -144,7 +182,10 @@ app.MapPost("/api/inbox/{source}", async (
     // Signature validation (if configured/required)
     var (ok, reason) = await sigValidator.ValidateAsync(source, request, payload, ct);
     if (!ok)
+    {
+        WebhookInbox.Api.Observability.Metrics.SignatureValidationFailures.Add(1);
         return Results.Unauthorized();
+    }
 
     // Resolve idempotency key
     var rawKey = IdempotencyKeyResolver.Resolve(request, payload);
@@ -157,6 +198,9 @@ app.MapPost("/api/inbox/{source}", async (
 
     if (!created)
     {
+        WebhookInbox.Api.Observability.Metrics.IdempotentHits.Add(1);
+        WebhookInbox.Api.Observability.Metrics.EventsTotal.Add(1,
+            new KeyValuePair<string, object?>("status", "duplicate"));
         // Duplicate – return existing eventId, no DB write
         return Results.Ok(new { eventId, duplicate = true });
     }
@@ -184,6 +228,7 @@ app.MapPost("/api/inbox/{source}", async (
 
     db.Events.Add(entity);
     await db.SaveChangesAsync(ct);
+    WebhookInbox.Api.Observability.Metrics.EventsTotal.Add(1, new KeyValuePair<string, object?>("status", "ingested"));
 
     // Return 202 with Location and body { eventId }
     var location = $"/api/events/{entity.Id}";
@@ -198,3 +243,7 @@ app.MapPost("/api/inbox/{source}", async (
 app.Run();
 
 public partial class Program { }
+
+
+
+

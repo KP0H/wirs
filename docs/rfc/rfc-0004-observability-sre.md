@@ -3,12 +3,12 @@ RFC: 0004
 Title: Observability & SRE
 Status: Active
 Owners: Dmitrii [KP0Hâ„¢] Pelevin
-Created: 2025-09-26
+Created: 2025-09-28
 ---
 
 ## Summary
-Add full observability to the Webhook Inbox system: metrics, traces, and logs.  
-Ensure operators and developers can detect issues (latency, retries, DLQ growth) and debug them efficiently.
+Introduce practical observability for the Webhook Inbox system with focus on service-level metrics scraped by Prometheus.  
+Traces and structured logging remain on the roadmap but are not yet implemented in code.
 
 ## Problem / Motivation
 Without observability:
@@ -16,59 +16,47 @@ Without observability:
 - Root cause analysis is slow due to lack of correlation between services.
 - No visibility into retry storms, DLQ growth, or high-latency endpoints.
 
-We need structured logs, distributed tracing, and service-level metrics to provide a complete operational picture.
+We need metrics that highlight ingestion health, delivery success, and rate limiting behaviour, with documentation that matches the current implementation state.
 
 ## Scope
-- **Metrics**:
-  - Prometheus metrics endpoint `/metrics` in API and Worker.
-  - Counters for events, deliveries, retries, DLQ.
-  - Histograms for request and delivery latency.
-- **Traces**:
-  - OpenTelemetry instrumentation for ASP.NET Core, HttpClient, EF Core.
-  - Context propagation across API â†’ Worker â†’ outbound HTTP.
-- **Logs**:
-  - Structured logging with Serilog.
-  - Correlation ID per request/event for consistent tracing.
-- **Dashboards & Alerts**:
-  - Minimal Grafana dashboard (importable JSON).
-  - Example alerts: high DLQ growth, error rate > 10%.
+### Metrics (implemented)
+- OpenTelemetry metrics wired in API and Worker using the shared `WebhookInbox` meter.
+- Prometheus scraping endpoint `/metrics` exposed by the API (ASP.NET pipeline).
+- Worker emits the same meter but requires an OTLP pipeline or Prometheus exporter hosted externally (no built-in HTTP listener yet).
+- Counters for ingestion flow, signature failures, idempotency hits, rate limit blocks, and delivery outcomes.
+- Histogram for delivery latency in the worker.
+- Grafana dashboard provisioned from `docker/grafana/dashboards/webhookinbox.json`.
 
-## Non-Goals
-- Full-fledged on-call runbooks (future).
-- Integration with external APM vendors (Datadog, New Relic).
-- Advanced anomaly detection.
+### Deferred / Future Work
+- Prometheus endpoint for the Worker (dedicated listener or sidecar exporter).
+- Distributed traces across API > Worker > outbound HTTP.
+- Structured logging standardisation with Serilog.
+- Grafana dashboards and alert definitions.
 
 ## Architectural Overview
-- **API**: Exposes `/metrics`; traces requests and DB operations.
-- **Worker**: Exposes `/metrics`; traces event processing and HttpClient calls.
-- **Prometheus** scrapes metrics from API and Worker.
-- **Grafana** visualizes key metrics and latency distributions.
-- **Serilog** writes structured logs (JSON or text).
-
-## Trade-offs
-- Using Prometheus + Grafana is standard, but requires infra setup.
-- Serilog is simple and reliable, but may need sink tuning for production scale.
-- Full OTel collector deployment is out of scope (we use SDK defaults).
+- **API**: Exposes `/metrics`; instruments ASP.NET Core, HttpClient, runtime, and EF Core.
+- **Worker**: Emits metrics via OpenTelemetry SDK; metrics need to be scraped via OTLP collector or future HTTP listener.
+- **Prometheus**: Scrapes API metrics endpoint.
+- **Shared Meter**: Both services publish to `WebhookInbox` meter for consistent naming.
 
 ## Metrics
-- `events_total{status="new|dispatched|failed|deadletter"}`
-- `deliveries_total{status="success|failed"}`
-- `retry_scheduled_total`
-- `delivery_duration_ms_bucket`
-- `dlq_size_gauge`
+- `webhookinbox_events_total{status="ingested|duplicate"}` — ingress volume.
+- `webhookinbox_signature_validation_failures_total` — HMAC validation failures.
+- `webhookinbox_idempotent_hits_total` — deduplicated requests.
+- `webhookinbox_rate_limit_blocked_total{source="..."}` — requests rejected by rate limiter.
+- `webhookinbox_deliveries_total{result="success|failed|deadletter"}` — worker delivery outcomes.
+- `webhookinbox_delivery_duration_ms_bucket` — histogram of delivery durations.
 
 ## Security
-- `/metrics` endpoint should not expose sensitive data.
-- Auth optional; may rely on network-level protections in MVP.
+- `/metrics` endpoint should not expose sensitive data; keep it internal-only in environments where Auth is not yet available.
 
 ## Risks
-- Metrics cardinality explosion if labels not controlled (e.g., per-endpoint).
-- High log volume may increase storage costs.
-- Missing alerts â†’ silent failures.
+- Metrics cardinality explosion if labels are extended with per-event identifiers.
+- Missing traces/logs reduce debuggability until deferred items are delivered.
 
 ## Exit Criteria
-- API and Worker expose Prometheus metrics.
-- OTel traces collected for API â†’ Worker â†’ HttpClient.
-- Logs structured and correlated via eventId.
-- Grafana dashboard provided in `/docs/grafana-dashboard.json`.
-- Alerts for DLQ size and error rate documented.
+- API exposes `/metrics` with Prometheus text format and the counters listed above.
+- Grafana served via Docker Compose (`docker compose up`) with Prometheus datasource pre-configured.
+- Worker publishes delivery metrics to the shared meter (verifiable via unit/integration tests or collector).
+- RFC kept in sync with implementation status, with deferred work tracked in backlog.
+
