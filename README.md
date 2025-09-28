@@ -145,6 +145,29 @@ curl http://localhost:8080/metrics
 ```
 
 
+## Docker Compose stack
+
+Run the service end-to-end (API, worker, PostgreSQL, Redis, Prometheus, Grafana) with Docker Compose:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+Environment defaults live in `.env.example`; copy it to `.env` and adjust as needed before running compose.
+
+What you get:
+- API on http://localhost:8080 (metrics at `/metrics`).
+- Prometheus on http://localhost:9090.
+- Grafana on http://localhost:3000 (defaults: `admin` / `admin`).
+- API applies EF Core migrations automatically on startup when `AutoMigrate=true` (Docker Compose sets this by default).
+
+A default Grafana dashboard is auto-provisioned from `docker/grafana/dashboards/webhookinbox.json`. For manual import details see [Grafana dashboard docs](docs/observability/grafana-dashboard.md).
+
+To stop and remove containers:
+```bash
+docker compose down -v
+```
+
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
 

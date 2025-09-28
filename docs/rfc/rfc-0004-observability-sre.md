@@ -25,16 +25,16 @@ We need metrics that highlight ingestion health, delivery success, and rate limi
 - Worker emits the same meter but requires an OTLP pipeline or Prometheus exporter hosted externally (no built-in HTTP listener yet).
 - Counters for ingestion flow, signature failures, idempotency hits, rate limit blocks, and delivery outcomes.
 - Histogram for delivery latency in the worker.
+- Grafana dashboard provisioned from `docker/grafana/dashboards/webhookinbox.json`.
 
 ### Deferred / Future Work
 - Prometheus endpoint for the Worker (dedicated listener or sidecar exporter).
-- Entity Framework Core instrumentation (tracing/metrics).
 - Distributed traces across API > Worker > outbound HTTP.
 - Structured logging standardisation with Serilog.
 - Grafana dashboards and alert definitions.
 
 ## Architectural Overview
-- **API**: Exposes `/metrics`; instruments ASP.NET Core, HttpClient, and runtime.
+- **API**: Exposes `/metrics`; instruments ASP.NET Core, HttpClient, runtime, and EF Core.
 - **Worker**: Emits metrics via OpenTelemetry SDK; metrics need to be scraped via OTLP collector or future HTTP listener.
 - **Prometheus**: Scrapes API metrics endpoint.
 - **Shared Meter**: Both services publish to `WebhookInbox` meter for consistent naming.
@@ -56,6 +56,7 @@ We need metrics that highlight ingestion health, delivery success, and rate limi
 
 ## Exit Criteria
 - API exposes `/metrics` with Prometheus text format and the counters listed above.
+- Grafana served via Docker Compose (`docker compose up`) with Prometheus datasource pre-configured.
 - Worker publishes delivery metrics to the shared meter (verifiable via unit/integration tests or collector).
 - RFC kept in sync with implementation status, with deferred work tracked in backlog.
 
