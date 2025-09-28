@@ -1,3 +1,4 @@
+using OpenTelemetry.Instrumentation.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -80,6 +81,7 @@ builder.Services.AddOpenTelemetry()
 
 var host = builder.Build();
 await host.RunAsync();
+
 
 
 

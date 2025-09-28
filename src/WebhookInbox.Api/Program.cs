@@ -1,3 +1,5 @@
+using OpenTelemetry.Instrumentation.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -107,7 +109,18 @@ builder.Services.AddOpenTelemetry()
 
 var app = builder.Build();
 
+var autoMigrate = app.Configuration.GetValue<bool?>("AutoMigrate") ?? false;
+if (autoMigrate)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
+
+
 
 // ---- Middleware ----
 if (app.Environment.IsDevelopment())
@@ -230,5 +243,7 @@ app.MapPost("/api/inbox/{source}", async (
 app.Run();
 
 public partial class Program { }
+
+
 
 
