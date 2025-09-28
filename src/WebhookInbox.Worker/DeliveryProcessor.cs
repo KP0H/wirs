@@ -59,8 +59,13 @@ public sealed class DeliveryProcessor(
                     };
                     req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+
                     var resp = await client.SendAsync(req, ct);
                     var respBody = await resp.Content.ReadAsStringAsync(ct);
+
+                    sw.Stop();
+                    Observability.Metrics.DeliveryDurationMs.Record(sw.Elapsed.TotalMilliseconds);
 
                     _db.DeliveryAttempts.Add(new DeliveryAttempt
                     {
@@ -81,6 +86,10 @@ public sealed class DeliveryProcessor(
                         : (IsExhausted(stat.NextTryNumber) ? EventStatus.DeadLetter : EventStatus.Failed);
 
                     await _db.SaveChangesAsync(ct);
+                    Observability.Metrics.DeliveriesTotal.Add(1,
+                        new KeyValuePair<string, object?>("result", resp.IsSuccessStatusCode ? "success" :
+                            (IsExhausted(stat.NextTryNumber) ? "deadletter" : "failed")));
+
                     processed++;
                 }
                 catch (Exception ex)
@@ -102,6 +111,8 @@ public sealed class DeliveryProcessor(
 
                     ev.Status = IsExhausted(stat.NextTryNumber) ? EventStatus.DeadLetter : EventStatus.Failed;
                     await _db.SaveChangesAsync(ct);
+
+                    Observability.Metrics.DeliveriesTotal.Add(1, new KeyValuePair<string, object?>("result", "failed"));
                 }
             }
         }

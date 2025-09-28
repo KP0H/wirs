@@ -124,6 +124,27 @@ The limit is applied per source (`{source}`), with the partition key being the s
 }
 ```
 
+### Observability: OpenTelemetry + Prometheus
+
+API publish **Prometheus** metrics on `/metrics`.
+
+Include standart instructions:
+- ASP.NET Core, HttpClient, Runtime, EF Core
+
+Custom metrics (Meter: `WebhookInbox`):
+- `webhookinbox_events_total{status="ingested|duplicate"}`
+- `webhookinbox_signature_validation_failures_total`
+- `webhookinbox_idempotent_hits_total`
+- `webhookinbox_rate_limit_blocked_total{source}` (for rate limiting)
+- `webhookinbox_deliveries_total{result="success|failed|deadletter"}` (worker)
+- `webhookinbox_delivery_duration_ms` (histograms)
+
+**Local check**
+```bash
+curl http://localhost:8080/metrics
+```
+
+
 ## RFCs / Milestones
 We use RFCs to document scope, architecture, and decisions. Each milestone references one or more RFCs.
 
