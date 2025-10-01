@@ -1,0 +1,10 @@
+﻿@page "/"
+@inject NavigationManager Navigation
+
+<PageTitle>Webhook Inbox</PageTitle>
+
+<h1 class="mb-4">Webhook Inbox</h1>
+
+<p>This admin UI lets you review ingested webhook events and their delivery attempts.</p>
+
+<button class="btn btn-primary" @onclick='@(() => Navigation.NavigateTo("/events"))'>View events</button>
