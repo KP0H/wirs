@@ -30,5 +30,6 @@ jobs:
             worker
             ui
             infra
+            lt
             ci
             docs

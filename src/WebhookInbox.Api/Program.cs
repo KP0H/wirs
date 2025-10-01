@@ -1,3 +1,5 @@
+using WebhookInbox.Api;
+using System.Text;
 using OpenTelemetry.Instrumentation.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -118,6 +120,65 @@ if (autoMigrate)
 }
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+static Dictionary<string, string[]> ConvertHeaders(JsonDocument doc)
+{
+    var result = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+    if (doc.RootElement.ValueKind != JsonValueKind.Object)
+    {
+        return result;
+    }
+
+    foreach (var prop in doc.RootElement.EnumerateObject())
+    {
+        string[] values = prop.Value.ValueKind switch
+        {
+            JsonValueKind.Array => prop.Value.EnumerateArray().Select(ConvertElementToString).ToArray(),
+            JsonValueKind.Null or JsonValueKind.Undefined => Array.Empty<string>(),
+            _ => new[] { ConvertElementToString(prop.Value) }
+        };
+
+        result[prop.Name] = values;
+    }
+
+    return result;
+}
+
+static string ConvertElementToString(JsonElement element) => element.ValueKind switch
+{
+    JsonValueKind.String => element.GetString() ?? string.Empty,
+    JsonValueKind.Number => element.ToString(),
+    JsonValueKind.True or JsonValueKind.False => element.GetBoolean().ToString().ToLowerInvariant(),
+    JsonValueKind.Null => string.Empty,
+    _ => element.ToString()
+};
+
+static (string Text, bool IsJson) DecodePayload(byte[] payload)
+{
+    if (payload is null || payload.Length == 0)
+    {
+        return (string.Empty, false);
+    }
+
+    try
+    {
+        using var doc = JsonDocument.Parse(payload);
+        var formatted = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        return (formatted, true);
+    }
+    catch (JsonException)
+    {
+        // fall back to plain text
+    }
+
+    try
+    {
+        return (Encoding.UTF8.GetString(payload), false);
+    }
+    catch
+    {
+        return ($"[base64] {Convert.ToBase64String(payload)}", false);
+    }
+}
 
 
 
@@ -157,6 +218,85 @@ app.MapGet("/api/version", () => Results.Ok(new { version = "v0.1.0", framework 
    .WithName("ApiVersion")
    .WithOpenApi();
 
+// Events listing
+app.MapGet("/api/events", async (
+    int page,
+    int pageSize,
+    AppDbContext db,
+    CancellationToken ct) =>
+{
+    page = page <= 0 ? 1 : page;
+    pageSize = Math.Clamp(pageSize <= 0 ? 20 : pageSize, 1, 200);
+    var skip = (page - 1) * pageSize;
+
+    var query = db.Events.AsNoTracking();
+    var total = await query.CountAsync(ct);
+    var items = await query
+        .Select(e => new EventListItemDto(e.Id, e.Source, e.Status.ToString(), e.SignatureStatus.ToString(), e.ReceivedAt))
+        .ToListAsync(ct);
+
+    var pagedItems = items
+        .OrderByDescending(e => e.ReceivedAt)
+        .Skip(skip)
+        .Take(pageSize)
+        .ToList();
+
+    var response = new EventListResponse(pagedItems, total, page, pageSize);
+    return Results.Ok(response);
+})
+.WithName("EventsList")
+.Produces<EventListResponse>(StatusCodes.Status200OK)
+.WithOpenApi();
+
+app.MapGet("/api/events/{id:guid}", async (
+    Guid id,
+    AppDbContext db,
+    CancellationToken ct) =>
+{
+    var entity = await db.Events.AsNoTracking()
+        .Include(e => e.Attempts)
+        .ThenInclude(a => a.Endpoint)
+        .FirstOrDefaultAsync(e => e.Id == id, ct);
+
+    if (entity is null)
+    {
+        return Results.NotFound();
+    }
+
+    var headers = ConvertHeaders(entity.Headers);
+    var (payloadText, payloadIsJson) = DecodePayload(entity.Payload);
+
+    var attempts = entity.Attempts
+        .OrderByDescending(a => a.Try)
+        .Select(a => new DeliveryAttemptDto(
+            a.Id,
+            a.EndpointId,
+            a.Endpoint?.Url,
+            a.Try,
+            a.SentAt,
+            a.ResponseCode,
+            a.Success,
+            a.ResponseBody,
+            a.NextAttemptAt))
+        .ToList();
+
+    var dto = new EventDetailDto(
+        entity.Id,
+        entity.Source,
+        entity.Status.ToString(),
+        entity.SignatureStatus.ToString(),
+        entity.ReceivedAt,
+        headers,
+        payloadText,
+        payloadIsJson,
+        attempts);
+
+    return Results.Ok(dto);
+})
+.WithName("EventDetails")
+.Produces<EventDetailDto>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound)
+.WithOpenApi();
 // POST /api/inbox/{source}
 // Reads raw body + headers, persists Event, returns 202 Accepted with eventId
 app.MapPost("/api/inbox/{source}", async (
@@ -240,9 +380,22 @@ app.MapPost("/api/inbox/{source}", async (
 .Produces(StatusCodes.Status400BadRequest)
 .WithOpenApi();
 
+
+
 app.Run();
 
 public partial class Program { }
+
+
+
+
+
+
+
+
+
+
+
 
 
 

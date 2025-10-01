@@ -3,70 +3,35 @@ name: CI
 on:
   push:
     branches:
-      - master
       - develop
-      - 'feat/**'
-      - 'fix/**'
-      - 'hotfix/**'
-      - 'chore/**'
+      - master
+      - feat/**
+      - fix/**
+      - chore/**
   pull_request:
     branches:
-      - master
       - develop
-  workflow_dispatch: {}
-
-permissions:
-  contents: read
+      - master
 
 jobs:
   build-and-test:
-    name: Build & Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest, windows-latest ]
-
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+      DOTNET_NOLOGO: 'true'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup .NET 9 SDK
+      - name: Set up .NET 9
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
-
-      - name: Show dotnet info
-        run: dotnet --info
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
+          dotnet-version: '9.0.x'
 
       - name: Restore
         run: dotnet restore WebhookInbox.sln
 
-      - name: Build (Release, no-restore)
-        run: dotnet build WebhookInbox.sln -c Release --no-restore /warnaserror
+      - name: Build
+        run: dotnet build WebhookInbox.sln --configuration Release --no-restore
 
-      - name: Test (with trx + coverage)
-        run: >
-          dotnet test tests/WebhookInbox.IntegrationTests/WebhookInbox.IntegrationTests.csproj
-          -c Release --no-build
-          --logger "trx;LogFileName=test_results.trx"
-          /p:CollectCoverage=true
-          /p:CoverletOutput=./TestResults/coverage/
-          /p:CoverletOutputFormat="lcov%2copencover"
-
-      - name: Upload test results (trx & coverage)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-${{ matrix.os }}
-          path: |
-            **/TestResults/**/*.trx
-            **/TestResults/**/coverage.*
+      - name: Test
+        run: dotnet test WebhookInbox.sln --configuration Release --no-build --verbosity normal

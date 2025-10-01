@@ -1,0 +1,168 @@
+﻿@page "/events/{Id:guid}"
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Event details</PageTitle>
+
+<h1 class="mb-3">Event details</h1>
+
+<button class="btn btn-link mb-3" @onclick="NavigateBack">← Back to events</button>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger" role="alert">@_error</div>
+}
+else if (_isLoading)
+{
+    <p>Loading event...</p>
+}
+else if (_event is null)
+{
+    <div class="alert alert-warning" role="alert">Event not found.</div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Event ID</dt>
+                <dd class="col-sm-9">@_event.Id</dd>
+
+                <dt class="col-sm-3">Received</dt>
+                <dd class="col-sm-9">@_event.ReceivedAt.ToLocalTime().ToString("F")</dd>
+
+                <dt class="col-sm-3">Source</dt>
+                <dd class="col-sm-9">@_event.Source</dd>
+
+                <dt class="col-sm-3">Status</dt>
+                <dd class="col-sm-9">@_event.Status</dd>
+
+                <dt class="col-sm-3">Signature</dt>
+                <dd class="col-sm-9">@_event.SignatureStatus</dd>
+            </dl>
+        </div>
+    </div>
+
+    <h2 class="h4">Headers</h2>
+    @if (_event.Headers?.Count > 0)
+    {
+        <div class="table-responsive mb-4">
+            <table class="table table-sm table-striped">
+                <thead>
+                    <tr>
+                        <th scope="col">Header</th>
+                        <th scope="col">Values</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var header in _event.Headers)
+                    {
+                        <tr>
+                            <td>@header.Key</td>
+                            <td>@string.Join(", ", header.Value ?? Array.Empty<string>())</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <p class="text-muted">No headers captured.</p>
+    }
+
+    <h2 class="h4">Payload</h2>
+    @if (string.IsNullOrWhiteSpace(_event.Payload))
+    {
+        <p class="text-muted">Empty payload.</p>
+    }
+    else
+    {
+        <pre class="bg-light p-3 border rounded"><code>@_event.Payload</code></pre>
+    }
+
+    <h2 class="h4">Delivery attempts</h2>
+    @if (_event.Attempts.Count == 0)
+    {
+        <p class="text-muted">No delivery attempts recorded yet.</p>
+    }
+    else
+    {
+        <div class="table-responsive mb-5">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th scope="col">Try</th>
+                        <th scope="col">Sent</th>
+                        <th scope="col">Endpoint</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Next attempt</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var attempt in _event.Attempts)
+                    {
+                        <tr>
+                            <td>@attempt.Try</td>
+                            <td>@attempt.SentAt.ToLocalTime().ToString("g")</td>
+                            <td>@(attempt.EndpointUrl ?? attempt.EndpointId.ToString())</td>
+                            <td>
+                                @if (attempt.Success)
+                                {
+                                    <span class="badge bg-success">@(attempt.ResponseCode?.ToString() ?? "Success")</span>
+                                }
+                                else if (attempt.ResponseCode.HasValue)
+                                {
+                                    <span class="badge bg-danger">@attempt.ResponseCode</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-warning text-dark">Pending</span>
+                                }
+                            </td>
+                            <td>@(attempt.NextAttemptAt?.ToLocalTime().ToString("g") ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private EventDetail? _event;
+    private bool _isLoading = true;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        _event = null;
+        try
+        {
+            _event = await Api.GetEventAsync(Id);
+            if (_event?.PayloadIsJson == true && !string.IsNullOrEmpty(_event.Payload))
+            {
+                // ensure pretty JSON formatting uses newline endings
+                _event = _event with { Payload = _event.Payload.Replace("\\r\\n", "\n") };
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void NavigateBack()
+    {
+        Navigation.NavigateTo("/events");
+    }
+}
