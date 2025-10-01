@@ -1,4 +1,4 @@
-services:
+﻿services:
   postgres:
     image: postgres:16-alpine
     container_name: webhookinbox-postgres
@@ -76,6 +76,30 @@ services:
       REDIS__CONNECTION: ${WEBHOOKINBOX_REDIS}
     restart: unless-stopped
 
+  loadtest:
+    build:
+      context: .
+      dockerfile: docker/loadtest/Dockerfile
+    container_name: webhookinbox-loadtest
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://0.0.0.0:8082
+      LoadTest__BaseUrl: ${WEBHOOKINBOX_LOADTEST_BASEURL:-http://api:8080}
+      LoadTest__StartupDelaySeconds: ${WEBHOOKINBOX_LOADTEST_STARTUP_DELAY:-25}
+      LoadTest__RequestsPerSecond: ${WEBHOOKINBOX_LOADTEST_RPS:-1.5}
+      LoadTest__Concurrency: ${WEBHOOKINBOX_LOADTEST_CONCURRENCY:-3}
+      LoadTest__DurationSeconds: ${WEBHOOKINBOX_LOADTEST_DURATION:-0}
+      LoadTest__EnableLogging: ${WEBHOOKINBOX_LOADTEST_ENABLE_LOGGING:-false}
+      LoadTest__HttpTimeoutSeconds: ${WEBHOOKINBOX_LOADTEST_HTTP_TIMEOUT:-30}
+      WEBHOOKINBOX_GITHUB_SECRET: ${WEBHOOKINBOX_GITHUB_SECRET}
+      WEBHOOKINBOX_STRIPE_SECRET: ${WEBHOOKINBOX_STRIPE_SECRET}
+    ports:
+      - "${WEBHOOKINBOX_LOADTEST_PORT:-8082}:8082"
+    restart: unless-stopped
+
   ui:
     build:
       context: .
@@ -103,6 +127,7 @@ services:
       - "9090:9090"
     depends_on:
       - api
+      - loadtest
     restart: unless-stopped
 
   grafana:

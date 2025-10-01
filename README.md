@@ -1,4 +1,4 @@
-# # Webhook Inbox & Retry Service
+﻿# Webhook Inbox & Retry Service
 
 A mini-service for secure webhook reception, storage, observability, and reliable retransmission to configurable endpoints with intelligent retries.
 
@@ -138,6 +138,9 @@ Custom metrics (Meter: `WebhookInbox`):
 - `webhookinbox_rate_limit_blocked_total{source}` (for rate limiting)
 - `webhookinbox_deliveries_total{result="success|failed|deadletter"}` (worker)
 - `webhookinbox_delivery_duration_ms` (histograms)
+- `webhookinbox_loadtest_requests_total{scenario,outcome}` (synthetic traffic mix)
+- `webhookinbox_loadtest_latency_ms` (latency histogram for the generator)
+- `webhookinbox_loadtest_inflight` (active request gauge)
 
 **Local check**
 ```bash
@@ -158,11 +161,26 @@ Environment defaults live in `.env.example`; copy it to `.env` and adjust as nee
 What you get:
 - API on http://localhost:8080 (metrics at `/metrics`).
 - Admin UI on http://localhost:8081.
+- Load test generator on http://localhost:8082 (metrics at `/metrics`).
 - Prometheus on http://localhost:9090.
 - Grafana on http://localhost:3000 (defaults: `admin` / `admin`).
 - API applies EF Core migrations automatically on startup when `AutoMigrate=true` (Docker Compose sets this by default).
-
 A default Grafana dashboard is auto-provisioned from `docker/grafana/dashboards/webhookinbox.json`. For manual import details see [Grafana dashboard docs](docs/observability/grafana-dashboard.md).
+
+### Built-in load test (demo mode)
+
+A dedicated `WebhookInbox.LoadTest` service runs inside Docker Compose. After a configurable delay it sends realistic GitHub and Stripe webhook variants (valid, missing/invalid signatures, expired timestamps, replay attempts) against the API so the UI always has demo data.
+
+Tune it via environment variables (edit `.env` before `docker compose up`):
+- `WEBHOOKINBOX_LOADTEST_RPS` — target requests per second.
+- `WEBHOOKINBOX_LOADTEST_CONCURRENCY` — number of concurrent send loops.
+- `WEBHOOKINBOX_LOADTEST_STARTUP_DELAY` — seconds to wait before the first wave.
+- `WEBHOOKINBOX_LOADTEST_DURATION` — total runtime in seconds (0 keeps it running continuously).
+- `WEBHOOKINBOX_LOADTEST_ENABLE_LOGGING` — set `true` to emit per-request logs from the generator service.
+- `WEBHOOKINBOX_LOADTEST_HTTP_TIMEOUT` — HTTP timeout for the synthetic client (seconds).
+- `WEBHOOKINBOX_LOADTEST_BASEURL` — override the API base URL if the stack topology changes.
+
+Metrics land under the `webhookinbox_loadtest_*` prefix and power the new Grafana load-test panels (request rate, latency percentiles, inflight gauge, failure counters). Prometheus scrapes the generator at `http://loadtest:8082/metrics`.
 
 To stop and remove containers:
 ```bash
@@ -193,9 +211,12 @@ We use RFCs to document scope, architecture, and decisions. Each milestone refer
 - [RFC-0002: Dispatcher & Retry Policy](docs/rfc/rfc-0002-dispatcher-retry.md)
 
 ### Milestones
-- **M1 – Ingestion & Storage** — API skeleton, EF Core models, health checks, Swagger. *Exit*: `POST /inbox` writes Event to PostgreSQL.
-- **M2 – Dispatcher & Retry** — Background worker, Polly retry, DeliveryAttempt records. *Exit*: Successful delivery to httpbin; failed endpoint schedules retries.
-- **M3 – Idempotency, HMAC, Rate Limits** — Redis deduplication, HMAC validation, rate limiting. *Exit*: Duplicate requests blocked; invalid signatures rejected.
-- **M4 – Observability & SRE** — OTel traces/metrics/logs, Prometheus + Grafana dashboard. *Exit*: Metrics available at `/metrics`; dashboard import works.
-- **M5 – Admin UI & Manual Redeliver** — Blazor UI list/details/attempts, manual re-deliver. *Exit*: Redeliver works via UI.
-- **M6 – Packaging & CI** — Docker Compose full stack, GitHub Actions CI pipeline. *Exit*: `docker compose up` starts stack; CI passes.
+- **M1 - Ingestion & Storage** — API skeleton, EF Core models, health checks, Swagger. *Exit*: `POST /inbox` writes Event to PostgreSQL.
+- **M2 - Dispatcher & Retry** — Background worker, Polly retry, DeliveryAttempt records. *Exit*: Successful delivery to httpbin; failed endpoint schedules retries.
+- **M3 - Idempotency, HMAC, Rate Limits** — Redis deduplication, HMAC validation, rate limiting. *Exit*: Duplicate requests blocked; invalid signatures rejected.
+- **M4 - Observability & SRE** — OTel traces/metrics/logs, Prometheus + Grafana dashboard. *Exit*: Metrics available at `/metrics`; dashboard import works.
+- **M5 - Admin UI & Manual Redeliver** — Blazor UI list/details/attempts, manual re-deliver. *Exit*: Redeliver works via UI.
+- **M6 - Packaging & CI** — Docker Compose full stack, GitHub Actions CI pipeline. *Exit*: `docker compose up` starts stack; CI passes.
+
+
+
